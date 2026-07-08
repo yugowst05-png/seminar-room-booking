@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>セミナールーム予約システム</title>
+<style>
+  :root {
+    --color-primary: #2563eb;
+    --color-danger: #dc2626;
+    --color-bg: #f4f6fb;
+    --color-card: #ffffff;
+    --color-border: #e2e8f0;
+    --color-text: #1e293b;
+    --color-muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", -apple-system, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+  header {
+    background: var(--color-primary);
+    color: white;
+    padding: 20px 24px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  main {
+    max-width: 960px;
+    margin: 24px auto;
+    padding: 0 16px 60px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  @media (min-width: 860px) {
+    main { grid-template-columns: 340px 1fr; }
+  }
+  .card {
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .card h2 { margin-top: 0; font-size: 16px; }
+  label { display: block; font-size: 13px; color: var(--color-muted); margin: 12px 0 4px; }
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  button {
+    margin-top: 16px;
+    width: 100%;
+    padding: 10px;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  .error-box {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #fee2e2;
+    color: var(--color-danger);
+    border-radius: 6px;
+    font-size: 13px;
+    display: none;
+    white-space: pre-line;
+  }
+  .room-block { margin-bottom: 20px; }
+  .room-block h3 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--color-primary);
+  }
+  .booking-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .booking-time { font-weight: 600; color: var(--color-primary); min-width: 100px; }
+  .booking-meta { flex: 1; margin: 0 10px; }
+  .booking-meta .title { font-weight: 600; }
+  .booking-meta .by { color: var(--color-muted); font-size: 12px; }
+  .del-btn {
+    width: auto;
+    margin: 0;
+    padding: 4px 10px;
+    background: transparent;
+    color: var(--color-danger);
+    border: 1px solid var(--color-danger);
+    font-size: 12px;
+  }
+  .empty { color: var(--color-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>セミナールーム予約システム</h1>
+</header>
+<main>
+  <section class="card">
+    <h2>新規予約</h2>
+    <form id="booking-form">
+      <label for="date">日付</label>
+      <input type="date" id="date" required />
+
+      <label for="start_time">開始時刻</label>
+      <select id="start_time" required></select>
+
+      <label for="end_time">終了時刻</label>
+      <select id="end_time" required></select>
+
+      <label for="title">用件</label>
+      <input type="text" id="title" placeholder="例: 週次定例MTG" required />
+
+      <label for="booked_by">予約者名</label>
+      <input type="text" id="booked_by" placeholder="例: 山田太郎" required />
+
+      <button type="submit">予約する</button>
+      <div class="error-box" id="error-box"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>予約状況</h2>
+    <label for="view-date">表示する日付</label>
+    <input type="date" id="view-date" />
+    <div id="bookings-list" style="margin-top:16px;"></div>
+  </section>
+</main>
+
+<script>
+const dateInput = document.getElementById('date');
+const viewDateInput = document.getElementById('view-date');
+const form = document.getElementById('booking-form');
+const errorBox = document.getElementById('error-box');
+const bookingsList = document.getElementById('bookings-list');
+
+let rooms = [];
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function loadRooms() {
+  const res = await fetch('/api/rooms');
+  rooms = await res.json();
+}
+
+async function loadBookings(date) {
+  const res = await fetch(`/api/bookings?date=${date}`);
+  const bookings = await res.json();
+  renderBookings(bookings);
+}
+
+function renderBookings(bookings) {
+  bookingsList.innerHTML = bookings.length
+    ? bookings.map(b => `
+        <div class="booking-row">
+          <span class="booking-time">${b.start_time} - ${b.end_time}</span>
+          <span class="booking-meta">
+            <div class="title">${escapeHtml(b.title)}</div>
+            <div class="by">予約者: ${escapeHtml(b.booked_by)}</div>
+          </span>
+          <button class="del-btn" data-id="${b.id}">削除</button>
+        </div>
+      `).join('')
+    : `<div class="empty">予約はありません</div>`;
+
+  bookingsList.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('この予約を削除しますか？')) return;
+      await fetch(`/api/bookings/${btn.dataset.id}`, { method: 'DELETE' });
+      loadBookings(viewDateInput.value);
+    });
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function buildTimeOptions(startHour, endHour, stepMinutes) {
+  const options = [];
+  for (let mins = startHour * 60; mins <= endHour * 60; mins += stepMinutes) {
+    const h = String(Math.floor(mins / 60)).padStart(2, '0');
+    const m = String(mins % 60).padStart(2, '0');
+    options.push(`${h}:${m}`);
+  }
+  return options;
+}
+
+function populateTimeSelects() {
+  const times = buildTimeOptions(8, 20, 30);
+  const optionsHtml = times.map(t => `<option value="${t}">${t}</option>`).join('');
+  const startSelect = document.getElementById('start_time');
+  const endSelect = document.getElementById('end_time');
+  startSelect.innerHTML = optionsHtml;
+  endSelect.innerHTML = optionsHtml;
+  startSelect.value = '09:00';
+  endSelect.value = '10:00';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorBox.style.display = 'none';
+
+  const startTimeValue = document.getElementById('start_time').value;
+  const endTimeValue = document.getElementById('end_time').value;
+
+  const payload = {
+    room_id: rooms[0].id,
+    date: dateInput.value,
+    start_time: startTimeValue,
+    end_time: endTimeValue,
+    title: document.getElementById('title').value,
+    booked_by: document.getElementById('booked_by').value,
+  };
+
+  const res = await fetch('/api/bookings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json();
+    let msg = data.error || '予約に失敗しました。';
+    if (data.conflicts && data.conflicts.length) {
+      msg += '\n重複している予約:\n' + data.conflicts
+        .map(c => `  ${c.start_time}-${c.end_time} (${c.title})`)
+        .join('\n');
+    }
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+    return;
+  }
+
+  form.reset();
+  populateTimeSelects();
+  dateInput.value = viewDateInput.value;
+  if (viewDateInput.value === payload.date) {
+    loadBookings(payload.date);
+  }
+});
+
+viewDateInput.addEventListener('change', () => loadBookings(viewDateInput.value));
+
+(async function init() {
+  await loadRooms();
+  populateTimeSelects();
+  const today = todayStr();
+  dateInput.value = today;
+  viewDateInput.value = today;
+  await loadBookings(today);
+})();
+</script>
+</body>
+</html>
